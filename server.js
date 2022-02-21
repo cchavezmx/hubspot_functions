@@ -7,11 +7,18 @@ const axios = require('axios');
 const hubspot = require('@hubspot/api-client');
 const hubspotClient = new hubspot.Client({ apiKey: process.env.HUBSPOT_API_KEY });
 
+// PARA BUSCAR EN EL PIEPLELINE ESPECIFICO
+// stage => Becalos
+const PIPELINE_ID = '1528677';
 
+// PARA MOVER EL DEAL DE STAGE
+// stage => INSCRITO
+const STAGE_PIPILNE = 5402703
+
+
+// busca dentro del pipeline espcifico
 const getOnePipeLine = async (value) => {
   try {
-    // PARA BUSCAR EN EL PIEPLELINE ESPECIFICO
-    const PIPELINE_ID = '1528677';
       const PublicObjectSearchRequest = { filterGroups: [
         { filters: [
         { value, propertyName: 'hs_object_id', operator: 'EQ' },
@@ -24,7 +31,7 @@ const getOnePipeLine = async (value) => {
         .searchApi
         .doSearch(PublicObjectSearchRequest);
         // TODO CUANDO NO HAY COINCIDENCIAS
-      console.log(apirResponse.body.results)
+      if (apirResponse.body.results.length === 0) throw new Error('No existe el deal')
       return apirResponse.body.results[0].id;
   }catch(error){
     return null
@@ -39,13 +46,14 @@ const getIdAssociation = async id => axios.get(`https://api.hubapi.com/crm-assoc
       return data.results[0]
 
     } else {
-
+      console.log(data.results, 'allDealsIds')
       const allDealsIds = data.results
       const promisseDeals = allDealsIds.map(async (deal) => await getOnePipeLine(deal))
 
       return await Promise.all(promisseDeals)
-      .then(res => {        
-        const dealPromise = res.find(deal => deal !== undefined)
+      .then(res => {
+        console.log(res, 'res')
+        const dealPromise = res.find(deal => deal !== null)
         return dealPromise
       })
       
@@ -53,13 +61,12 @@ const getIdAssociation = async id => axios.get(`https://api.hubapi.com/crm-assoc
 
   });
 
-
 const findDeal = async (id) => {
   try {
     return await Promise.resolve(
       getIdAssociation(id),
     ).then(async (value) => {
-
+      console.log(value, 'value')
       if (value === null) throw new Error('No existe el deal')
 
       const PublicObjectSearchRequest = { filterGroups: [
@@ -78,7 +85,6 @@ const findDeal = async (id) => {
   }
 };
 
-
 const findContactEmail = async (email) => {
   
   const PublicObjectSearchRequest = { filterGroups: [{ filters: [{ value: email, propertyName: 'email', operator: 'EQ' }] }] };
@@ -95,6 +101,29 @@ const findContactEmail = async (email) => {
   }
 };
 
+// PARA ACTUALIZAR EL DEAL
+const moveStageToDeal = async (id) => {
+  console.log(id, 'id para mover')
+  const properties = {
+    dealstage: STAGE_PIPILNE,
+  };
+
+  const SimplePublicObjectInput = { properties };
+  const dealId = `${id}`;
+
+  try {
+    const apiResponse = await
+    hubspotClient
+      .crm
+      .deals
+      .basicApi
+      .update(dealId, SimplePublicObjectInput);
+    return apiResponse;
+  } catch (error) {
+    return error;
+  }
+};
+
 app.post('/find-deal', async (req, res) => {
     try {
       const email = 'carlos@devf.mx'
@@ -102,7 +131,10 @@ app.post('/find-deal', async (req, res) => {
 
       const deal = await findDeal(dealId); 
           // TODO MOVER STAGE
-      return res.status(200).json({ success: JSON.stringify(deal) });
+
+      const changeStage = await moveStageToDeal(deal);
+
+      return res.status(200).json({ success: JSON.stringify(changeStage.response.statusCode) });
       
 
     }catch (error) {
